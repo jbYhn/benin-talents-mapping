@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import * as d3 from "d3";
 
+
 const DOMAIN_COLORS = {
   "Innovation & Tech": "#818cf8", "Banque & Finance": "#fbbf24",
   "Commerce & Entrepreneuriat": "#34d399", "Communication & Médias": "#f472b6",
@@ -16,6 +17,7 @@ const DOMAIN_COLORS = {
 
 const STATUT_ICON = { "Entrepreneur": "🚀", "Étudiant": "🎓", "Profession libérale": "⚖️", "Salarié": "💼" };
 const ALL_STATUTS = ["Salarié", "Entrepreneur", "Étudiant", "Profession libérale"];
+// ALL_PAYS est calculé dynamiquement depuis les données (voir useMemo plus bas)
 const COUNTRY_IDS = { "24": "Benin", "250": "France", "826": "United Kingdom", "756": "Switzerland", "694": "Sierra Leone" };
 
 function getColor(domaines) {
@@ -24,7 +26,7 @@ function getColor(domaines) {
   return DOMAIN_COLORS[primary] || "#64748b";
 }
 
-// ── TALENT CARD ───────────────────────────────────────────────────────────────
+// ── TALENT CARD (shared between list + sheet) ─────────────────────────────────
 function TalentCard({ t, onClick, compact = false }) {
   const color = getColor(t.domaines);
   return (
@@ -55,7 +57,7 @@ function TalentCard({ t, onClick, compact = false }) {
   );
 }
 
-// ── DETAIL SHEET ──────────────────────────────────────────────────────────────
+// ── DETAIL SHEET CONTENT ───────────────────────────────────────────────────────
 function TalentDetail({ t, onClose }) {
   const color = getColor(t.domaines);
   return (
@@ -101,23 +103,17 @@ function TalentDetail({ t, onClose }) {
 export default function DiasporaMap() {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
+  const zoomRef = useRef(null);
 
   const [talents, setTalents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [mobileView, setMobileView] = useState("map");
+  const [mobileView, setMobileView] = useState("map"); // "map" | "list"
   const [geoData, setGeoData] = useState(null);
   const [countries, setCountries] = useState([]);
   const [projection, setProjection] = useState(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
-
-  // Zoom CSS : scale + translate gérés en state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const isPanning = useRef(false);
-  const panStart = useRef({ x: 0, y: 0, px: 0, py: 0 });
-  const lastPinchDist = useRef(null);
-
+  const [transform, setTransform] = useState({ k: 1, x: 0, y: 0 });
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [tooltip, setTooltip] = useState(null);
@@ -125,14 +121,18 @@ export default function DiasporaMap() {
   const [filterStatut, setFilterStatut] = useState("Tous");
   const [filterPays, setFilterPays] = useState("Tous");
   const [showFilters, setShowFilters] = useState(false);
-  const [showSheet, setShowSheet] = useState(false);
+  const [showSheet, setShowSheet] = useState(false); // mobile bottom sheet
 
-  // Fetch talents
+  // Fetch talents from API
   useEffect(() => {
     const apiUrl = (process.env.NEXT_PUBLIC_API_URL || '') + '/api/talents';
     fetch(apiUrl)
       .then(r => r.json())
-      .then(data => { setTalents(data); setLoading(false); })
+      .then(data => { 
+	      console.log('Telents reçus: ', data.length, data[0]);
+	      setTalents(data); 
+	      setLoading(false); 
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -144,32 +144,24 @@ export default function DiasporaMap() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Measure container
+  // Resize observer
   useEffect(() => {
     const update = () => {
-      const el = containerRef.current;
+      // Essayer containerRef d'abord, sinon svgRef
+      const el = containerRef.current || svgRef.current;
       if (el) {
         const { width, height } = el.getBoundingClientRect();
         if (width > 0 && height > 0) setSize({ w: width, h: height });
       }
     };
+    // Double tentative : immédiate + après le premier paint
     update();
-    requestAnimationFrame(update);
+    const raf = requestAnimationFrame(update);
     const ro = new ResizeObserver(update);
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
+    if (svgRef.current) ro.observe(svgRef.current);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
-
-  // Centrage initial quand la taille est connue
-  useEffect(() => {
-    if (!size.w || !size.h) return;
-    // Zoom initial x3.5, centré sur Bénin/Europe
-    const s = 3.5;
-    const beninX = size.w * 0.506;
-    const beninY = size.h * 0.42;
-    setZoom(s);
-    setPan({ x: size.w / 2 - s * beninX, y: size.h / 2 - s * beninY });
-  }, [size.w, size.h]);
 
   // Load GeoJSON
   useEffect(() => {
@@ -177,7 +169,7 @@ export default function DiasporaMap() {
       .then(r => r.json()).then(setGeoData).catch(() => {});
   }, []);
 
-  // Projection — sans zoom (le zoom est géré par CSS transform)
+  // Projection
   useEffect(() => {
     if (!size.w) return;
     const proj = d3.geoNaturalEarth1().scale(size.w / 6.5).translate([size.w / 2, size.h / 2]);
@@ -193,7 +185,9 @@ export default function DiasporaMap() {
   useEffect(() => {
     if (!geoData || !pathGen) return;
     const load = () => {
-      if (window.topojson) setCountries(window.topojson.feature(geoData, geoData.objects.countries).features);
+      if (window.topojson) {
+        setCountries(window.topojson.feature(geoData, geoData.objects.countries).features);
+      }
     };
     if (window.topojson) { load(); return; }
     const s = document.createElement("script");
@@ -202,102 +196,39 @@ export default function DiasporaMap() {
     document.head.appendChild(s);
   }, [geoData, pathGen]);
 
-  // ── Zoom handlers (scroll + pinch) ──────────────────────────────────────────
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 0.89;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    setZoom(z => {
-      const nz = Math.min(Math.max(z * factor, 0.5), 20);
-      setPan(p => ({
-        x: mx - (mx - p.x) * (nz / z),
-        y: my - (my - p.y) * (nz / z),
-      }));
-      return nz;
-    });
-  };
-
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return;
-    isPanning.current = true;
-    panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isPanning.current) return;
-    setPan({
-      x: panStart.current.px + e.clientX - panStart.current.x,
-      y: panStart.current.py + e.clientY - panStart.current.y,
-    });
-  };
-
-  const handleMouseUp = () => { isPanning.current = false; };
-
-  // Touch pinch + pan
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
-    } else if (e.touches.length === 1) {
-      isPanning.current = true;
-      panStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, px: pan.x, py: pan.y };
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    e.preventDefault();
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (lastPinchDist.current) {
-        const factor = dist / lastPinchDist.current;
-        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - containerRef.current.getBoundingClientRect().left;
-        const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - containerRef.current.getBoundingClientRect().top;
-        setZoom(z => {
-          const nz = Math.min(Math.max(z * factor, 0.5), 20);
-          setPan(p => ({ x: mx - (mx - p.x) * (nz / z), y: my - (my - p.y) * (nz / z) }));
-          return nz;
-        });
-      }
-      lastPinchDist.current = dist;
-    } else if (e.touches.length === 1 && isPanning.current) {
-      setPan({
-        x: panStart.current.px + e.touches[0].clientX - panStart.current.x,
-        y: panStart.current.py + e.touches[0].clientY - panStart.current.y,
-      });
-    }
-  };
-
-  const handleTouchEnd = () => { isPanning.current = false; lastPinchDist.current = null; };
-
-  // Wheel non-passive pour pouvoir appeler preventDefault
+  // Zoom setup — se déclenche dès que size est connu ET svgRef est monté
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, [pan, zoom]);
+    if (!svgRef.current) return;
+    // Si size pas encore connu, tenter de le lire directement
+    let w = size.w, h = size.h;
+    if (!w || !h) {
+      const el = containerRef.current || svgRef.current;
+      if (el) { const r = el.getBoundingClientRect(); w = r.width; h = r.height; }
+    }
+    if (!w || !h) return;
 
-  const handleZoomBtn = (factor) => {
-    const cx = size.w / 2, cy = size.h / 2;
-    setZoom(z => {
-      const nz = Math.min(Math.max(z * factor, 0.5), 20);
-      setPan(p => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) }));
-      return nz;
-    });
-  };
+    const svg = d3.select(svgRef.current);
 
-  const handleZoomReset = () => {
+    if (!zoomRef.current) {
+      const zoom = d3.zoom()
+        .scaleExtent([0.3, 20])
+        .on("zoom", (e) => {
+          setTransform({ k: e.transform.k, x: e.transform.x, y: e.transform.y });
+        });
+      svg.call(zoom);
+      zoomRef.current = zoom;
+    }
+
+    // Toujours recalculer le transform initial quand la taille change
     const s = 3.5;
-    setZoom(s);
-    setPan({ x: size.w / 2 - s * size.w * 0.506, y: size.h / 2 - s * size.h * 0.42 });
-  };
+    const t = d3.zoomIdentity
+      .translate(w / 2 - s * w * 0.506, h / 2 - s * h * 0.42)
+      .scale(s);
+    svg.call(zoomRef.current.transform, t);
+    setTransform({ k: t.k, x: t.x, y: t.y });
+  }, [size]);
 
-  // ── Données ──────────────────────────────────────────────────────────────────
+  // ALL_PAYS calculé dynamiquement depuis les données réelles
   const ALL_PAYS = useMemo(() => [...new Set(talents.map(t => t.pays).filter(Boolean))].sort(), [talents]);
 
   const filtered = useMemo(() => talents.filter(t => {
@@ -322,7 +253,6 @@ export default function DiasporaMap() {
     return c;
   }, [filtered]);
 
-  // Dots projetés (sans transform — le transform CSS s'en charge)
   const dots = useMemo(() => {
     if (!projection) return [];
     return filtered.map((t, i) => {
@@ -336,9 +266,11 @@ export default function DiasporaMap() {
     if (!projection) return [];
     const bc = projection([2.315, 9.307]);
     if (!bc) return [];
+    // Arc depuis Bénin vers chaque pays de la diaspora (tous sauf Bénin)
     return ALL_PAYS
       .filter(pays => pays !== "Bénin" && countsByCountry[pays] > 0)
       .map(pays => {
+        // Utilise les coords moyennes des talents de ce pays
         const talentsDuPays = filtered.filter(t => t.pays === pays);
         if (!talentsDuPays.length) return null;
         const avgLng = talentsDuPays.reduce((s, t) => s + t.lng, 0) / talentsDuPays.length;
@@ -350,10 +282,23 @@ export default function DiasporaMap() {
       }).filter(Boolean);
   }, [projection, countsByCountry, ALL_PAYS, filtered]);
 
-  const handleDotClick = (t) => { setSelected(t); if (isMobile) setShowSheet(true); };
+  const handleZoomReset = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    const s = 3.5;
+    const t = d3.zoomIdentity
+      .translate(size.w / 2 - s * size.w * 0.506, size.h / 2 - s * size.h * 0.42)
+      .scale(s);
+    d3.select(svgRef.current).transition().duration(750).call(zoomRef.current.transform, t);
+  };
+
+  const handleDotClick = (t) => {
+    setSelected(t);
+    if (isMobile) setShowSheet(true);
+  };
+
   const activeFiltersCount = [filterDomain, filterStatut, filterPays].filter(f => f !== "Tous").length;
 
-  // ── FILTER PANEL ─────────────────────────────────────────────────────────────
+  // ── FILTER PANEL (shared) ────────────────────────────────────────────────────
   const FilterPanel = () => (
     <div style={{ padding: isMobile ? "16px" : "14px 12px" }}>
       <div style={{ marginBottom: 18 }}>
@@ -410,7 +355,9 @@ export default function DiasporaMap() {
     </div>
   );
 
-  // ── RENDER ────────────────────────────────────────────────────────────────────
+  // ── MAP SVG (inliné — pas de sous-composant pour éviter le remount à chaque render) ──
+
+  // ── RENDER ───────────────────────────────────────────────────────────────────
   if (loading) return (
     <div style={{ background: "#080c14", height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, color: "#5a7090", fontFamily: "Georgia, serif" }}>
       <div style={{ fontSize: 32 }}>🇧🇯</div>
@@ -431,7 +378,9 @@ export default function DiasporaMap() {
               <div style={{ fontSize: 10, color: "#5a7090", fontStyle: "italic" }}>{filtered.length} talents · {Object.values(countsByCountry).filter(c => c > 0).length} pays</div>
             </div>
           </div>
+
           {isMobile ? (
+            /* Mobile: filter button + map/list toggle */
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setShowFilters(!showFilters)} style={{
                 background: activeFiltersCount > 0 ? "#1e3a5f" : "#0d1a2a", border: `1px solid ${activeFiltersCount > 0 ? "#2a5a9f" : "#1c2840"}`,
@@ -449,6 +398,7 @@ export default function DiasporaMap() {
               </div>
             </div>
           ) : (
+            /* Desktop: country pills */
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {ALL_PAYS.map(p => (
                 <div key={p} onClick={() => setFilterPays(filterPays === p ? "Tous" : p)} style={{
@@ -461,6 +411,8 @@ export default function DiasporaMap() {
             </div>
           )}
         </div>
+
+        {/* Mobile filter panel inline */}
         {isMobile && showFilters && (
           <div style={{ marginTop: 10, maxHeight: "50vh", overflowY: "auto", borderTop: "1px solid #1c2840", paddingTop: 10 }}>
             <FilterPanel />
@@ -470,31 +422,17 @@ export default function DiasporaMap() {
 
       {/* ── BODY ── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+
+        {/* Desktop left sidebar */}
         {!isMobile && (
           <div style={{ width: 200, background: "#0a0f1a", borderRight: "1px solid #141e30", overflowY: "auto", flexShrink: 0 }}>
             <FilterPanel />
           </div>
         )}
 
-        {/* ── MAP ── */}
-        <div
-          ref={containerRef}
-          style={{ flex: 1, position: "relative", background: "#060a10", overflow: "hidden", display: isMobile && mobileView === "list" ? "none" : "block", cursor: isPanning.current ? "grabbing" : "grab", userSelect: "none" }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* SVG avec CSS transform */}
-          <svg
-            ref={svgRef}
-            width={size.w}
-            height={size.h}
-            style={{ display: "block", position: "absolute", top: 0, left: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0", willChange: "transform" }}
-          >
+        {/* Map */}
+        <div ref={containerRef} style={{ flex: 1, position: "relative", background: "#060a10", overflow: "hidden", display: isMobile && mobileView === "list" ? "none" : "block" }}>
+          <svg ref={svgRef} width="100%" height="100%" style={{ display: "block", cursor: "grab", touchAction: "none" }}>
             <defs>
               <radialGradient id="oceanGrad" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stopColor="#0a1525" /><stop offset="100%" stopColor="#060a10" />
@@ -504,75 +442,66 @@ export default function DiasporaMap() {
                 <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
             </defs>
-            <rect width={size.w} height={size.h} fill="url(#oceanGrad)" />
-
-            {/* Pays */}
-            {pathGen && countries.map((f, i) => {
-              const id = f.id; const name = COUNTRY_IDS[id]; const isBenin = name === "Benin"; const isHL = !!name;
-              return <path key={f.id ?? i} d={pathGen(f)}
-                fill={isBenin ? "#2a3d1a" : isHL ? "#1a2a40" : "#0f1a28"}
-                stroke={isBenin ? "#f5c842" : isHL ? "#2a4060" : "#0d1620"}
-                strokeWidth={isBenin ? 0.8 : isHL ? 0.5 : 0.3}
-                opacity={isHL ? 1 : 0.7} />;
-            })}
-
-            {/* Graticule */}
-            {pathGen && <path d={pathGen(d3.geoGraticule()())} fill="none" stroke="#0e1a28" strokeWidth={0.3} />}
-
-            {/* Arcs */}
-            {arcPaths.map(({ pays, d, count }) => (
-              <path key={pays} d={d} fill="none" stroke="rgba(245,200,70,0.15)"
-                strokeWidth={Math.min(count * 0.3 + 0.5, 2)}
-                strokeDasharray="4,3" />
-            ))}
-
-            {/* Points */}
-            {dots.map(t => {
-              const color = getColor(t.domaines);
-              const isHov = hovered === t.i;
-              const isSel = selected && selected.i === t.i;
-              const r = isSel ? 7 : isHov ? 6 : isMobile ? 6 : 4;
-              return (
-                <g key={t.i} style={{ cursor: "pointer" }}
-                  onMouseEnter={(e) => { setHovered(t.i); setTooltip({ t, x: e.clientX, y: e.clientY }); }}
-                  onMouseLeave={() => { setHovered(null); setTooltip(null); }}
-                  onClick={(e) => { e.stopPropagation(); handleDotClick(isSel && !isMobile ? null : t); }}>
-                  {(isHov || isSel) && <circle cx={t.x} cy={t.y} r={r * 2.8} fill={color} opacity={0.15} />}
-                  <circle cx={t.x} cy={t.y} r={r} fill={color}
-                    stroke={isSel ? "#fff" : isHov ? color : "rgba(0,0,0,0.4)"}
-                    strokeWidth={isSel ? 1.5 : 0.8}
-                    filter={isHov || isSel ? "url(#softglow)" : undefined} opacity={0.9} />
-                </g>
-              );
-            })}
-
-            {/* Labels pays */}
-            {projection && ALL_PAYS.map(name => {
-              const talentsDuPays = filtered.filter(t => t.pays === name);
-              if (!talentsDuPays.length) return null;
-              const avgLng = talentsDuPays.reduce((s, t) => s + t.lng, 0) / talentsDuPays.length;
-              const avgLat = talentsDuPays.reduce((s, t) => s + t.lat, 0) / talentsDuPays.length;
-              const pt = projection([avgLng, avgLat]); if (!pt) return null;
-              const count = countsByCountry[name] || 0; if (!count) return null;
-              const accent = name === "Bénin";
-              return (
-                <g key={name}>
-                  <text x={pt[0]} y={pt[1] - 14} textAnchor="middle" fontSize={accent ? 11 : 9}
-                    fill={accent ? "#f5c842" : "#5a8ab8"} fontWeight="600" style={{ pointerEvents: "none", fontFamily: "Georgia, serif" }}>{name}</text>
-                  <text x={pt[0]} y={pt[1] - 5} textAnchor="middle" fontSize={accent ? 9 : 7}
-                    fill={accent ? "#a08030" : "#2a5070"} style={{ pointerEvents: "none", fontFamily: "monospace" }}>
-                    {count} talent{count > 1 ? "s" : ""}
-                  </text>
-                </g>
-              );
-            })}
+            <rect width="100%" height="100%" fill="url(#oceanGrad)" />
+            <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
+              {pathGen && countries.map((f, i) => {
+                const id = f.id; const name = COUNTRY_IDS[id]; const isBenin = name === "Benin"; const isHL = !!name;
+                return <path key={f.id ?? i} d={pathGen(f)}
+                  fill={isBenin ? "#2a3d1a" : isHL ? "#1a2a40" : "#0f1a28"}
+                  stroke={isBenin ? "#f5c842" : isHL ? "#2a4060" : "#0d1620"}
+                  strokeWidth={isBenin ? 0.8 / transform.k : isHL ? 0.5 / transform.k : 0.3 / transform.k}
+                  opacity={isHL ? 1 : 0.7} />;
+              })}
+              {pathGen && <path d={pathGen(d3.geoGraticule()())} fill="none" stroke="#0e1a28" strokeWidth={0.3 / transform.k} />}
+              {arcPaths.map(({ pays, d, count }) => (
+                <path key={pays} d={d} fill="none" stroke="rgba(245,200,70,0.15)"
+                  strokeWidth={Math.min(count * 0.3 + 0.5, 2) / transform.k}
+                  strokeDasharray={`${4 / transform.k},${3 / transform.k}`} />
+              ))}
+              {dots.map(t => {
+                const color = getColor(t.domaines); const isHov = hovered === t.i; const isSel = selected && selected.i === t.i;
+                const r = (isSel ? 7 : isHov ? 6 : isMobile ? 6 : 4) / transform.k;
+                return (
+                  <g key={t.i} style={{ cursor: "pointer" }}
+                    onMouseEnter={(e) => { setHovered(t.i); setTooltip({ t, x: e.clientX, y: e.clientY }); }}
+                    onMouseLeave={() => { setHovered(null); setTooltip(null); }}
+                    onClick={() => handleDotClick(isSel && !isMobile ? null : t)}>
+                    {(isHov || isSel) && <circle cx={t.x} cy={t.y} r={r * 2.8} fill={color} opacity={0.15} />}
+                    <circle cx={t.x} cy={t.y} r={r} fill={color}
+                      stroke={isSel ? "#fff" : isHov ? color : "rgba(0,0,0,0.4)"}
+                      strokeWidth={(isSel ? 1.5 : 0.8) / transform.k}
+                      filter={isHov || isSel ? "url(#softglow)" : undefined} opacity={0.9} />
+                  </g>
+                );
+              })}
+              {projection && ALL_PAYS.map(name => {
+                const talentsDuPays = filtered.filter(t => t.pays === name);
+                if (!talentsDuPays.length) return null;
+                const avgLng = talentsDuPays.reduce((s, t) => s + t.lng, 0) / talentsDuPays.length;
+                const avgLat = talentsDuPays.reduce((s, t) => s + t.lat, 0) / talentsDuPays.length;
+                const pt = projection([avgLng, avgLat]); if (!pt) return null;
+                const count = countsByCountry[name] || 0; if (!count) return null;
+                const accent = name === "Bénin";
+                const fs = (accent ? 11 : 9) / transform.k;
+                return (
+                  <g key={name}>
+                    <text x={pt[0]} y={pt[1] - 14 / transform.k} textAnchor="middle" fontSize={fs}
+                      fill={accent ? "#f5c842" : "#5a8ab8"} fontWeight="600" style={{ pointerEvents: "none", fontFamily: "Georgia, serif" }}>{name}</text>
+                    <text x={pt[0]} y={pt[1] - 5 / transform.k} textAnchor="middle" fontSize={fs * 0.8}
+                      fill={accent ? "#a08030" : "#2a5070"} style={{ pointerEvents: "none", fontFamily: "monospace" }}>
+                      {count} talent{count > 1 ? "s" : ""}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
           </svg>
 
           {/* Zoom buttons */}
-          <div style={{ position: "absolute", bottom: isMobile ? 80 : 20, right: 12, display: "flex", flexDirection: "column", gap: 4, zIndex: 10 }}>
+          <div style={{ position: "absolute", bottom: isMobile ? 80 : 20, right: 12, display: "flex", flexDirection: "column", gap: 4 }}>
             {[
-              { label: "+", action: () => handleZoomBtn(1.5) },
-              { label: "−", action: () => handleZoomBtn(0.67) },
+              { label: "+", action: () => { if (zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.5); } },
+              { label: "−", action: () => { if (zoomRef.current) d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 0.67); } },
               { label: "⌂", action: handleZoomReset },
             ].map(({ label, action }) => (
               <button key={label} onClick={action} style={{
@@ -583,7 +512,7 @@ export default function DiasporaMap() {
             ))}
           </div>
 
-          {/* Tooltip desktop */}
+          {/* Desktop tooltip */}
           {tooltip && !selected && !isMobile && (
             <div style={{
               position: "fixed", left: tooltip.x + 14, top: tooltip.y - 30,
@@ -615,17 +544,20 @@ export default function DiasporaMap() {
         )}
       </div>
 
-      {/* Mobile bottom sheet */}
+      {/* ── MOBILE BOTTOM SHEET ── */}
       {isMobile && showSheet && selected && (
         <>
+          {/* Backdrop */}
           <div onClick={() => { setShowSheet(false); setSelected(null); }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />
+          {/* Sheet */}
           <div style={{
             position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
             background: "#0d1525", borderTop: "2px solid #1c2840",
             borderRadius: "18px 18px 0 0", maxHeight: "80dvh", overflowY: "auto",
             animation: "slideUp 0.25s ease-out"
           }}>
+            {/* Handle */}
             <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
               <div style={{ width: 40, height: 4, borderRadius: 2, background: "#2a3a50" }} />
             </div>
@@ -634,7 +566,7 @@ export default function DiasporaMap() {
         </>
       )}
 
-      {/* Desktop legend */}
+      {/* ── DESKTOP LEGEND BAR ── */}
       {!isMobile && (
         <div style={{ background: "#080c14", borderTop: "1px solid #0e1828", padding: "5px 20px", display: "flex", gap: 14, alignItems: "center", flexShrink: 0, overflowX: "auto" }}>
           {Object.entries(countsByDomain).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([d, c]) => (

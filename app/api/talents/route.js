@@ -90,7 +90,6 @@ export async function GET() {
           statut:     clean(r['Statut']),
           poste:      clean(r['Titre / Poste']),
           entreprise: clean(r['Entreprise']),
-          linkedin,
         };
       });
 
