@@ -106,3 +106,13 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+export async function POST(request) {
+  // Protection par token secret — définis REVALIDATE_TOKEN dans les env vars Vercel
+  const token = request.headers.get('x-revalidate-token');
+  const expected = process.env.REVALIDATE_TOKEN;
+  if (expected && token !== expected) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+  _cache = { data: null, timestamp: 0 };
+  return NextResponse.json({ message: 'Cache vidé — prochaine requête rechargera depuis Drive' });
+}
