@@ -358,7 +358,7 @@ export default function DiasporaMap() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 22 }}>🇧🇯</span>
             <div>
-              <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#f0e6c8", lineHeight: 1.2 }}>Diaspora Béninoise</div>
+              <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#f0e6c8", lineHeight: 1.2 }}>Cartographie des talents béninois</div>
               <div style={{ fontSize: 10, color: "#5a7090", fontStyle: "italic" }}>{filtered.length} talents · {Object.values(countsByCountry).filter(c => c > 0).length} pays</div>
             </div>
           </div>
