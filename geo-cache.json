@@ -33,5 +33,95 @@
     "lat": 39.7837304,
     "lng": -100.445882,
     "jitter": 0.5
+  },
+  "Espagne": {
+    "lat": 39.3260685,
+    "lng": -4.8379791,
+    "jitter": 0.5
+  },
+  "Ghana": {
+    "lat": 8,
+    "lng": -2,
+    "jitter": 0.8139973382429864
+  },
+  "Sénégal": {
+    "lat": 14,
+    "lng": -14,
+    "jitter": 0.739222564590665
+  },
+  "Luxembourg": {
+    "lat": 49.75,
+    "lng": 6.16666666,
+    "jitter": 0.3
+  },
+  "Brésil": {
+    "lat": -10.3333333,
+    "lng": -53.2,
+    "jitter": 0.5
+  },
+  "Nigeria": {
+    "lat": 10,
+    "lng": 8,
+    "jitter": 1.6018808389584485
+  },
+  "Afrique du Sud": {
+    "lat": -28.8166236,
+    "lng": 24.991639,
+    "jitter": 0.5
+  },
+  "Belgique": {
+    "lat": 50.83333333,
+    "lng": 4,
+    "jitter": 0.3
+  },
+  "Cap-Vert": {
+    "lat": 16.0000552,
+    "lng": -24.0083947,
+    "jitter": 0.5
+  },
+  "Côte d'Ivoire": {
+    "lat": 8,
+    "lng": -5,
+    "jitter": 0.9464304282701163
+  },
+  "Guinée": {
+    "lat": 11,
+    "lng": -10,
+    "jitter": 0.8263994863933006
+  },
+  "Émirats arabes unis": {
+    "lat": 24.0002488,
+    "lng": 53.9994829,
+    "jitter": 0.5
+  },
+  "Irlande": {
+    "lat": 52.865196,
+    "lng": -7.9794599,
+    "jitter": 0.5
+  },
+  "Pakistan": {
+    "lat": 30,
+    "lng": 70,
+    "jitter": 1.4870692653672861
+  },
+  "Congo": {
+    "lat": 0,
+    "lng": 25,
+    "jitter": 2.5521548629431647
+  },
+  "Maroc": {
+    "lat": 28.3347722,
+    "lng": -10.3713379,
+    "jitter": 0.5
+  },
+  "Australie": {
+    "lat": -24.7761086,
+    "lng": 134.755,
+    "jitter": 0.5
+  },
+  "Allemagne": {
+    "lat": 51.1638175,
+    "lng": 10.4478313,
+    "jitter": 0.5
   }
 }
