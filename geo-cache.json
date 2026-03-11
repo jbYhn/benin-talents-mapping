@@ -1,0 +1,37 @@
+{
+  "Bénin": {
+    "lat": 9.3077,
+    "lng": 2.3158,
+    "jitter": 0.45
+  },
+  "France": {
+    "lat": 46.2276,
+    "lng": 2.2137,
+    "jitter": 1.33
+  },
+  "Royaume-Uni": {
+    "lat": 55.3781,
+    "lng": -3.436,
+    "jitter": 0.97
+  },
+  "Suisse": {
+    "lat": 46.8182,
+    "lng": 8.2275,
+    "jitter": 0.68
+  },
+  "Sierra Leone": {
+    "lat": 8.4657,
+    "lng": -11.7799,
+    "jitter": 0.44
+  },
+  "Canada": {
+    "lat": 60,
+    "lng": -95,
+    "jitter": 5.266421407791485
+  },
+  "États-Unis": {
+    "lat": 39.7837304,
+    "lng": -100.445882,
+    "jitter": 0.5
+  }
+}
