@@ -1,4 +1,5 @@
-export const metadata = { title: "Diaspora Béninoise", description: "Carte des talents béninois" };
+import { Analytics } from "@vercel/analytics/next"
+export const metadata = { title: "Compétences Béninoises", description: "Carte des talents béninois" };
 export default function RootLayout({ children }) {
   return (
     <html lang="fr">
