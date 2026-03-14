@@ -427,7 +427,7 @@ export default function DiasporaMap() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 22 }}>🇧🇯</span>
             <div>
-              <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#f0e6c8", lineHeight: 1.2 }}>Cartographie des compétences béninoises</div>
+              <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#f0e6c8", lineHeight: 1.2 }}>Diaspora Béninoise</div>
               <div style={{ fontSize: 10, color: "#5a7090", fontStyle: "italic" }}>{filtered.length} talents · {Object.values(countsByCountry).filter(c => c > 0).length} pays</div>
             </div>
           </div>
@@ -449,15 +449,24 @@ export default function DiasporaMap() {
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {ALL_PAYS.map(p => (
-                <div key={p} onClick={() => setFilterPays(filterPays === p ? "Tous" : p)} style={{
-                  background: filterPays === p ? "#1e3a5f" : "#0d1525", border: `1px solid ${filterPays === p ? "#2a5a9f" : "#1c2840"}`,
-                  borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: filterPays === p ? "#7eb8f7" : "#607090"
-                }}>
-                  <strong style={{ color: filterPays === p ? "#a8d4ff" : "#8090a8" }}>{countsByCountry[p]}</strong> {p}
-                </div>
-              ))}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+              {Object.entries(countsByDomain).sort((a, b) => b[1] - a[1]).map(([d, c]) => {
+                const color = DOMAIN_COLORS[d] || "#64748b";
+                const isActive = filterDomain === d;
+                return (
+                  <div key={d} onClick={() => setFilterDomain(isActive ? "Tous" : d)} style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    background: isActive ? color + "22" : "#0d1525",
+                    border: `1px solid ${isActive ? color + "88" : "#1c2840"}`,
+                    borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+                    color: isActive ? color : "#607090"
+                  }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: isActive ? `0 0 5px ${color}` : "none" }} />
+                    <span>{d}</span>
+                    <strong style={{ color: isActive ? color : "#3a5070", fontFamily: "monospace" }}>{c}</strong>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
