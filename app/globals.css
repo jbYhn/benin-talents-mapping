@@ -1,2 +1,16 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; background: #080c14; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: #080c14;
+}
+
+/* La carte gère son propre overflow */
+.map-container {
+  overflow: hidden;
+  height: 100dvh;
+}
